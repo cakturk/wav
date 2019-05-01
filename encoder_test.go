@@ -5,6 +5,38 @@ import (
 	"testing"
 )
 
+func TestDownscale(t *testing.T) {
+	in, err := os.Open("fixtures/listinfo.wav")
+	if err != nil {
+		t.Fatalf("couldn't open %v %v", in, err)
+	}
+	dec := NewDecoder(in)
+	inbuf, err := dec.FullPCMBuffer()
+	inbuf.Data = inbuf.Data[:len(inbuf.Data)/2]
+	if err != nil {
+		t.Fatalf("couldn't read buffer %v %v", in, err)
+	}
+	in.Close()
+	out, err := os.Create("/tmp/out.wav")
+	if err != nil {
+		t.Fatalf("couldn't create %v %v", out, err)
+	}
+	e := NewEncoder(
+		out,
+		22050,
+		24,
+		2,
+		int(dec.WavAudioFormat),
+	)
+	if err = e.Write(inbuf); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out.Close()
+}
+
 func TestEncoderRoundTrip(t *testing.T) {
 	os.Mkdir("testOutput", 0777)
 	testCases := []struct {
@@ -48,9 +80,22 @@ func TestEncoderRoundTrip(t *testing.T) {
 			int(d.BitDepth),
 			buf.Format.NumChannels,
 			int(d.WavAudioFormat))
+		orig := buf.Data
+		if len(orig) < 100 {
+			t.Errorf("WTF!")
+		}
+		part0 := orig[:200]
+		part1 := orig[200:]
+		_ = part1
+		buf.Data = part0
 		if err = e.Write(buf); err != nil {
 			t.Fatal(err)
 		}
+		buf.Data = part1
+		if err = e.Write(buf); err != nil {
+			t.Fatal(err)
+		}
+		buf.Data = orig
 		if tc.metadata != nil {
 			e.Metadata = tc.metadata
 		}

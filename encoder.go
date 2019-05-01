@@ -68,6 +68,7 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 	frameCount := buf.NumFrames()
 	// performance tweak: setup a buffer so we don't do too many writes
 	bb := bytes.NewBuffer(nil)
+	var arr [4]byte
 	var err error
 	for i := 0; i < frameCount; i++ {
 		for j := 0; j < buf.Format.NumChannels; j++ {
@@ -78,9 +79,13 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 					return err
 				}
 			case 16:
-				if err = binary.Write(bb, binary.LittleEndian, int16(v)); err != nil {
+				binary.LittleEndian.PutUint16(arr[:2], uint16(v))
+				if _, err = bb.Write(arr[:2]); err != nil {
 					return err
 				}
+				// if err = binary.Write(bb, binary.LittleEndian, int16(v)); err != nil {
+				// 	return err
+				// }
 			case 24:
 				if err = binary.Write(bb, binary.LittleEndian, audio.Int32toInt24LEBytes(int32(v))); err != nil {
 					return err
