@@ -1,7 +1,6 @@
 package wav
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -67,7 +66,6 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 
 	frameCount := buf.NumFrames()
 	// performance tweak: setup a buffer so we don't do too many writes
-	bb := bytes.NewBuffer(nil)
 	var arr [4]byte
 	var err error
 	for i := 0; i < frameCount; i++ {
@@ -75,36 +73,40 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 			v := buf.Data[i*buf.Format.NumChannels+j]
 			switch e.BitDepth {
 			case 8:
-				if err = binary.Write(bb, binary.LittleEndian, uint8(v)); err != nil {
+				if err = binary.Write(e.w, binary.LittleEndian, uint8(v)); err != nil {
 					return err
 				}
+				e.WrittenBytes++
 			case 16:
 				binary.LittleEndian.PutUint16(arr[:2], uint16(v))
-				if _, err = bb.Write(arr[:2]); err != nil {
+				if _, err = e.w.Write(arr[:2]); err != nil {
 					return err
 				}
+				e.WrittenBytes += 2
 				// if err = binary.Write(bb, binary.LittleEndian, int16(v)); err != nil {
 				// 	return err
 				// }
 			case 24:
-				if err = binary.Write(bb, binary.LittleEndian, audio.Int32toInt24LEBytes(int32(v))); err != nil {
+				if err = binary.Write(e.w, binary.LittleEndian, audio.Int32toInt24LEBytes(int32(v))); err != nil {
 					return err
 				}
+				e.WrittenBytes += 3
 			case 32:
-				if err = binary.Write(bb, binary.LittleEndian, int32(v)); err != nil {
+				if err = binary.Write(e.w, binary.LittleEndian, int32(v)); err != nil {
 					return err
 				}
+				e.WrittenBytes += 4
 			default:
 				return fmt.Errorf("can't add frames of bit size %d", e.BitDepth)
 			}
 		}
 		e.frames++
 	}
-	if n, err := e.w.Write(bb.Bytes()); err != nil {
-		e.WrittenBytes += n
-		return err
-	}
-	e.WrittenBytes += bb.Len()
+	// if n, err := e.w.Write(bb.Bytes()); err != nil {
+	// 	e.WrittenBytes += n
+	// 	return err
+	// }
+	// e.WrittenBytes += bb.Len()
 
 	return nil
 }
