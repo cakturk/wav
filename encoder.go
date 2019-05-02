@@ -1,6 +1,7 @@
 package wav
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -33,6 +34,8 @@ type Encoder struct {
 	pcmChunkStarted bool
 	pcmChunkSizePos int
 	wroteHeader     bool // true if we've written the header out
+	bufWr           *bufio.Writer
+	arr             [4]byte
 }
 
 // NewEncoder creates a new encoder to create a new wav file.
@@ -44,6 +47,7 @@ func NewEncoder(w io.WriteSeeker, sampleRate, bitDepth, numChans, audioFormat in
 		BitDepth:       bitDepth,
 		NumChans:       numChans,
 		WavAudioFormat: audioFormat,
+		bufWr:          bufio.NewWriter(w),
 	}
 }
 
@@ -66,20 +70,19 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 
 	frameCount := buf.NumFrames()
 	// performance tweak: setup a buffer so we don't do too many writes
-	var arr [4]byte
 	var err error
 	for i := 0; i < frameCount; i++ {
 		for j := 0; j < buf.Format.NumChannels; j++ {
 			v := buf.Data[i*buf.Format.NumChannels+j]
 			switch e.BitDepth {
 			case 8:
-				if err = binary.Write(e.w, binary.LittleEndian, uint8(v)); err != nil {
+				if err = binary.Write(e.bufWr, binary.LittleEndian, uint8(v)); err != nil {
 					return err
 				}
 				e.WrittenBytes++
 			case 16:
-				binary.LittleEndian.PutUint16(arr[:2], uint16(v))
-				if _, err = e.w.Write(arr[:2]); err != nil {
+				binary.LittleEndian.PutUint16(e.arr[:2], uint16(v))
+				if _, err = e.bufWr.Write(e.arr[:2]); err != nil {
 					return err
 				}
 				e.WrittenBytes += 2
@@ -87,12 +90,12 @@ func (e *Encoder) addBuffer(buf *audio.IntBuffer) error {
 				// 	return err
 				// }
 			case 24:
-				if err = binary.Write(e.w, binary.LittleEndian, audio.Int32toInt24LEBytes(int32(v))); err != nil {
+				if err = binary.Write(e.bufWr, binary.LittleEndian, audio.Int32toInt24LEBytes(int32(v))); err != nil {
 					return err
 				}
 				e.WrittenBytes += 3
 			case 32:
-				if err = binary.Write(e.w, binary.LittleEndian, int32(v)); err != nil {
+				if err = binary.Write(e.bufWr, binary.LittleEndian, int32(v)); err != nil {
 					return err
 				}
 				e.WrittenBytes += 4
@@ -241,6 +244,11 @@ func (e *Encoder) writeMetadata() error {
 func (e *Encoder) Close() error {
 	if e == nil || e.w == nil {
 		return nil
+	}
+
+	// flush previously buffered data
+	if err := e.bufWr.Flush(); err != nil {
+		return err
 	}
 
 	// inject metadata at the end to not trip implementation not supporting
